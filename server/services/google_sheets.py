@@ -1,128 +1,140 @@
 import os
 import logging
-import gspread
+from typing import Dict, Any, Optional
 from google.oauth2 import service_account
-from config import settings
-import uuid
-import datetime
-from models.news import NewsSubmission, ProcessedSubmission
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
+from config import settings
+from models.news import ProcessedSubmission
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class GoogleSheetsService:
-    """Service for interacting with Google Sheets"""
+    """Service for interacting with Google Sheets API"""
     
     def __init__(self):
-        """Initialize Google Sheets service"""
+        """Initialize the service with Google credentials"""
+        # Initialize service to None in case initialization fails
+        self.service = None
+        self.credentials = None
+        
         try:
-            # Verify if credentials file exists
-            if not os.path.exists(settings.GOOGLE_CREDENTIALS_FILE):
-                raise FileNotFoundError(f"Google credentials file not found: {settings.GOOGLE_CREDENTIALS_FILE}")
-                
-            logger.info(f"Initializing Google Sheets service with credentials: {settings.GOOGLE_CREDENTIALS_FILE}")
-            logger.info(f"Spreadsheet ID: {settings.SPREADSHEET_ID}")
+            credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
+            logger.info(f"Using Google credentials file: {credentials_path}")
             
-            # Create credentials
-            credentials = service_account.Credentials.from_service_account_file(
-                settings.GOOGLE_CREDENTIALS_FILE,
+            # Check if the credentials file exists
+            if not os.path.exists(credentials_path):
+                logger.error(f"Google credentials file not found: {credentials_path}")
+                return
+                
+            # Authentication
+            self.credentials = service_account.Credentials.from_service_account_file(
+                credentials_path, 
                 scopes=['https://www.googleapis.com/auth/spreadsheets']
             )
             
-            # Authorize and create client
-            self.client = gspread.authorize(credentials)
-            
-            # Try to open the spreadsheet - first try SPREADSHEET_ID, fallback to FORM_RESPONSES_SHEET_ID
-            try:
-                sheet_id = settings.SPREADSHEET_ID
-                self.sheet = self.client.open_by_key(sheet_id)
-                logger.info(f"Successfully opened spreadsheet: {self.sheet.title}")
-            except gspread.exceptions.SpreadsheetNotFound:
-                # Try the alternative sheet ID if available
-                if settings.FORM_RESPONSES_SHEET_ID and settings.FORM_RESPONSES_SHEET_ID != settings.SPREADSHEET_ID:
-                    logger.warning(f"Spreadsheet not found with ID: {settings.SPREADSHEET_ID}. Trying FORM_RESPONSES_SHEET_ID...")
-                    sheet_id = settings.FORM_RESPONSES_SHEET_ID
-                    self.sheet = self.client.open_by_key(sheet_id)
-                    logger.info(f"Successfully opened spreadsheet with FORM_RESPONSES_SHEET_ID: {self.sheet.title}")
-                else:
-                    raise
-                    
-            # Get all available worksheets
-            self.worksheets = self.sheet.worksheets()
-            logger.info(f"Available worksheets: {[ws.title for ws in self.worksheets]}")
+            # Build the service
+            self.service = build('sheets', 'v4', credentials=self.credentials)
+            logger.info("Google Sheets service initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Google Sheets service: {str(e)}", exc_info=True)
-            print("\nIMPORTANT: The service account needs access to the Google Sheet!")
-            print("Please share your Google Sheet with the service account email from your credentials file.")
-            raise
+            logger.error(f"Google Sheets service initialization error: {e}")
+            # Don't raise here to allow app to start even if Google Sheets is not available
     
-    def _initialize_sheets(self):
-        try:
-            self.submissions_sheet = self.sheet.worksheet("Submissions")
-        except gspread.exceptions.WorksheetNotFound:
-            self.submissions_sheet = self.sheet.add_worksheet(
-                title="Submissions", 
-                rows=1000, 
-                cols=10
-            )
-            # Add headers
-            self.submissions_sheet.append_row([
-                "ID", "Timestamp", "Title", "Description", "City", 
-                "Category", "Publisher Name", "Publisher Phone", 
-                "Image Path", "Status"
-            ])
-    
-    def get_all_submissions(self):
-        records = self.submissions_sheet.get_all_records()
-        submissions = []
+    def _ensure_service(self) -> bool:
+        """
+        Ensure the Google Sheets service is available
         
-        for record in records:
-            # Skip header row
-            if record.get("ID") == "ID":
-                continue
-                
-            submission = ProcessedSubmission(
-                id=record.get("ID", ""),
-                timestamp=datetime.datetime.fromisoformat(record.get("Timestamp", datetime.datetime.now().isoformat())),
-                news_title=record.get("Title", ""),
-                news_description=record.get("Description", ""),
-                city=record.get("City", ""),
-                category=record.get("Category", ""),
-                publisher_name=record.get("Publisher Name", ""),
-                publisher_phone=record.get("Publisher Phone", ""),
-                image_path=record.get("Image Path", ""),
-                status=record.get("Status", "pending")
-            )
-            submissions.append(submission)
+        Returns:
+            bool: True if service is available, False otherwise
+        """
+        if self.service is None:
+            logger.error("Google Sheets service is not initialized")
+            return False
+        return True
+    
+    def append_submission(self, submission: ProcessedSubmission) -> Optional[Dict[str, Any]]:
+        """
+        Append a submission to the Google Sheet
+        
+        Args:
+            submission: The news submission to append
             
-        return submissions
+        Returns:
+            Response from the Google Sheets API or None if error
+        """
+        if not self._ensure_service():
+            return None
+            
+        try:
+            # Format the data for the sheet
+            row_data = [
+                submission.id,
+                submission.news_title,
+                submission.news_description,
+                submission.city,
+                submission.category,
+                submission.publisher_name,
+                submission.publisher_phone,
+                submission.image_path if submission.image_path else "",
+                submission.status,
+                submission.timestamp.isoformat() if submission.timestamp else ""
+            ]
+            
+            # Append to sheet
+            result = self.service.spreadsheets().values().append(
+                spreadsheetId=settings.GOOGLE_SHEET_ID,
+                range=f"{settings.GOOGLE_SHEET_RANGE}!A:J",
+                valueInputOption='RAW',
+                insertDataOption='INSERT_ROWS',
+                body={
+                    'values': [row_data]
+                }
+            ).execute()
+            
+            logger.info(f"Appended submission to sheet: {submission.id}")
+            return result
+            
+        except HttpError as e:
+            logger.error(f"Google Sheets API error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error appending to Google Sheet: {e}")
+            return None
     
-    def add_submission(self, submission: ProcessedSubmission):
-        row = [
-            submission.id,
-            submission.timestamp.isoformat(),
-            submission.news_title,
-            submission.news_description,
-            submission.city,
-            submission.category,
-            submission.publisher_name,
-            submission.publisher_phone,
-            submission.image_path or "",
-            submission.status
-        ]
-        self.submissions_sheet.append_row(row)
-    
-    def update_submission_status(self, submission_id: str, status: str, duplicate_of: str = None):
-        records = self.submissions_sheet.get_all_records()
+    def get_sheet_data(self, spreadsheet_id: str, range_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get data from a Google Sheet
         
-        for i, record in enumerate(records, start=2):  # Start from 2 to account for header row
-            if record.get("ID") == submission_id:
-                self.submissions_sheet.update_cell(i, 10, status)  # Status is in column J (10)
-                if duplicate_of:
-                    # Add a note about the duplicate
-                    self.submissions_sheet.update_cell(
-                        i, 4, f"{record.get('Description')} [DUPLICATE of {duplicate_of}]"
-                    )
-                return True
-                
-        return False
+        Args:
+            spreadsheet_id: ID of the Google Sheet
+            range_name: Range to retrieve (e.g. 'Sheet1!A1:E10')
+            
+        Returns:
+            Data from the sheet or None if error
+        """
+        if not self._ensure_service():
+            return None
+            
+        try:
+            # Log the spreadsheet and range being accessed
+            logger.info(f"Accessing spreadsheet ID: {spreadsheet_id}, range: {range_name}")
+            
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name
+            ).execute()
+            
+            rows = result.get('values', [])
+            logger.info(f"Retrieved {len(rows)} rows from Google Sheets")
+            return result
+            
+        except HttpError as e:
+            logger.error(f"Google Sheets API error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting data from Google Sheet: {e}")
+            return None

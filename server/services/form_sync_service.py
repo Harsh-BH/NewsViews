@@ -1,148 +1,182 @@
-import datetime
-import uuid
-from typing import List, Dict, Any
-import os
 import time
 import logging
+import uuid
 from datetime import datetime
-import googleapiclient.discovery
-from google.oauth2 import service_account
+from typing import List, Dict, Any
 
-# Import from the consolidated config
 from config import settings
+from services.google_sheets import GoogleSheetsService
+from services.database import DatabaseService
+from models.news import ProcessedSubmission
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class FormSyncService:
+    """Service to sync Google Forms responses with the database"""
+    
     def __init__(self):
+        """Initialize the form sync service"""
+        self.sheets_service = GoogleSheetsService()
+        self.db_service = DatabaseService()
         self.spreadsheet_id = settings.FORM_RESPONSES_SHEET_ID
-        self.credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
-        self.last_sync_row = 1  # Start from row 2 (header is row 1)
-        self.column_mapping = {
-            'News Title': 'title',
-            'News Description': 'description',
-            'City': 'city',
-            'Category': 'category',
-            'Your Name': 'reporter_name',
-            'Contact Number': 'contact_number'
-        }
         
-        if not self.spreadsheet_id:
-            raise ValueError("FORM_RESPONSES_SHEET_ID setting is not set")
+        # Fix: Use a default value or get from settings directly
+        # Option 1: Use default value
+        self.sheet_range = "Form Responses 1"
+        # Option 2: Get it from settings if it exists
+        if hasattr(settings, 'GOOGLE_SHEET_RANGE'):
+            self.sheet_range = settings.GOOGLE_SHEET_RANGE
+            
+        self.last_sync_row = 1  # Start from row 1 (header)
         
-        if not self.credentials_path:
-            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS setting is not set")
-
-    def get_sheets_service(self):
-        """Create and return a Google Sheets service object"""
-        scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-        credentials = service_account.Credentials.from_service_account_file(
-            self.credentials_path, scopes=scopes)
-        service = googleapiclient.discovery.build('sheets', 'v4', credentials=credentials)
-        return service
-
-    def get_form_responses(self):
-        """Fetch new responses from the Google Sheet"""
-        try:
-            service = self.get_sheets_service()
-            sheets = service.spreadsheets()
-            
-            # First, get the header row to map columns
-            result = sheets.values().get(
-                spreadsheetId=self.spreadsheet_id,
-                range='Form Responses 1!A1:Z1'
-            ).execute()
-            headers = result.get('values', [[]])[0]
-            
-            # Next, get all rows after the last synced row
-            result = sheets.values().get(
-                spreadsheetId=self.spreadsheet_id,
-                range=f'Form Responses 1!A{self.last_sync_row + 1}:Z'
-            ).execute()
-            rows = result.get('values', [])
-            
-            if not rows:
-                logger.info("No new responses found")
-                return []
-                
-            # Process the rows
-            news_items = []
-            for i, row in enumerate(rows):
-                if len(row) < len(headers):
-                    row.extend([''] * (len(headers) - len(row)))
-                
-                news_item = {}
-                for j, header in enumerate(headers):
-                    if header in self.column_mapping:
-                        news_item[self.column_mapping[header]] = row[j]
-                
-                news_item['source'] = 'google_form'
-                news_item['submitted_at'] = datetime.now().isoformat()
-                news_items.append(news_item)
-                
-            # Update the last synced row
-            self.last_sync_row += len(rows)
-            logger.info(f"Fetched {len(rows)} new responses")
-            return news_items
-            
-        except Exception as e:
-            logger.error(f"Error fetching form responses: {e}")
-            return []
-
-    def save_to_database(self, news_items):
-        """Save the news items to the database"""
-        try:
-            # This is where you would save the data to your database
-            # Example using SQLAlchemy:
-            # for item in news_items:
-            #     news = News(
-            #         title=item.get('title', ''),
-            #         description=item.get('description', ''),
-            #         city=item.get('city', ''),
-            #         category=item.get('category', ''),
-            #         reporter_name=item.get('reporter_name', ''),
-            #         contact_number=item.get('contact_number', ''),
-            #         source=item.get('source', ''),
-            #         submitted_at=item.get('submitted_at')
-            #     )
-            #     db_session.add(news)
-            # db_session.commit()
-            
-            # For now, just log the items
-            for item in news_items:
-                logger.info(f"Would save to database: {item}")
-                
-            logger.info(f"Successfully processed {len(news_items)} news items")
-            return True
-        except Exception as e:
-            logger.error(f"Error saving to database: {e}")
-            return False
-
-    def sync(self):
-        """Sync data from Google Forms to the database"""
-        logger.info("Starting form sync process")
-        news_items = self.get_form_responses()
-        if news_items:
-            self.save_to_database(news_items)
-        return len(news_items)
-
-    def start_sync_loop(self, interval_minutes=None):
-        """Start a continuous sync loop with the specified interval"""
-        # Use the setting from config if not specified
-        if interval_minutes is None:
-            interval_minutes = settings.FORM_SYNC_INTERVAL_MINUTES
-            
-        logger.info(f"Starting sync loop with {interval_minutes} minute interval")
+    def start_sync_loop(self, interval_minutes: int = 5):
+        """
+        Start a continuous loop to sync form responses at regular intervals
+        
+        Args:
+            interval_minutes: Minutes to wait between sync operations
+        """
+        logger.info(f"Starting form sync loop with {interval_minutes} minute interval")
+        interval_seconds = interval_minutes * 60
+        
         while True:
-            self.sync()
-            logger.info(f"Sleeping for {interval_minutes} minutes")
-            time.sleep(interval_minutes * 60)
+            try:
+                logger.info("Running scheduled form sync")
+                self.sync()
+                logger.info(f"Next sync in {interval_minutes} minutes")
+            except Exception as e:
+                logger.error(f"Error during scheduled sync: {e}")
+            
+            time.sleep(interval_seconds)
+    
+    def sync(self) -> int:
+        """
+        Sync Google Forms responses to the database
+        
+        Returns:
+            Number of new items processed
+        """
+        try:
+            logger.info(f"Fetching form responses from row {self.last_sync_row + 1}")
+            
+            # Check if spreadsheet ID is set
+            if not self.spreadsheet_id:
+                logger.error("Form sync failed: No spreadsheet ID configured")
+                return 0
+                
+            # Get sheet data starting from the last synced row + 1
+            responses = self.sheets_service.get_sheet_data(
+                spreadsheet_id=self.spreadsheet_id,
+                range_name=f"{self.sheet_range}!A{self.last_sync_row + 1}:Z"
+            )
+            
+            if responses is None:
+                logger.error("Failed to get sheet data - Google Sheets service unavailable")
+                return 0
+                
+            if not responses.get("values", []):
+                logger.info("No new form responses found")
+                return 0
+            
+            values = responses.get("values", [])
+            processed_count = 0
+            
+            # Get column headers if this is the first sync
+            headers = None
+            if self.last_sync_row == 1:
+                headers = values[0]
+                values = values[1:]  # Skip header row
+            
+            # Process each row
+            for row_index, row in enumerate(values):
+                try:
+                    # Skip empty rows
+                    if not row or len(row) < 4:  # Assuming minimum required fields
+                        continue
+                    
+                    # Create a ProcessedSubmission from the row data
+                    submission = self._create_submission_from_row(row, headers)
+                    
+                    # Save to database - use add_submission instead of save_submission
+                    self.db_service.add_submission(submission)
+                    
+                    processed_count += 1
+                    self.last_sync_row = self.last_sync_row + row_index + 1
+                    
+                    logger.info(f"Processed form response from row {self.last_sync_row}")
+                except Exception as e:
+                    logger.error(f"Error processing row {self.last_sync_row + row_index + 1}: {e}")
+            
+            logger.info(f"Form sync completed: {processed_count} new items processed")
+            return processed_count
+            
+        except Exception as e:
+            logger.error(f"Form sync failed: {e}")
+            raise
+    
+    def _create_submission_from_row(self, row: List[str], headers: List[str] = None) -> ProcessedSubmission:
+        """
+        Convert a sheet row to a ProcessedSubmission
+        
+        Args:
+            row: Row data from Google Sheet
+            headers: Optional column headers
+            
+        Returns:
+            ProcessedSubmission object
+        """
+        # Default mapping if no headers provided
+        if not headers:
+            # Default mapping - adjust based on your actual sheet structure
+            title_index = 1  # Assuming title is in column B
+            desc_index = 2   # Assuming description is in column C
+            city_index = 3   # Assuming city is in column D
+            category_index = 4  # Assuming category is in column E
+            name_index = 5   # Assuming reporter name is in column F
+            phone_index = 6  # Assuming contact number is in column G
+            timestamp_index = 0  # Assuming timestamp is in column A
+        else:
+            # Map columns based on headers
+            header_map = {header.lower().strip(): i for i, header in enumerate(headers)}
+            
+            # Map to indices (with defaults if headers don't match)
+            title_index = header_map.get('title', header_map.get('news title', 1))
+            desc_index = header_map.get('description', header_map.get('news description', 2))
+            city_index = header_map.get('city', 3)
+            category_index = header_map.get('category', 4)
+            name_index = header_map.get('name', header_map.get('reporter name', 5))
+            phone_index = header_map.get('phone', header_map.get('contact number', 6))
+            timestamp_index = header_map.get('timestamp', 0)
+        
+        # Get values with safety checks
+        def get_safe_value(index):
+            return row[index] if index < len(row) else ""
+        
+        # Generate unique ID
+        submission_id = str(uuid.uuid4())
+        
+        # Parse timestamp if available
+        timestamp_str = get_safe_value(timestamp_index)
+        try:
+            timestamp = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
+        except (ValueError, TypeError):
+            timestamp = datetime.now()
+        
+        # Create ProcessedSubmission object
+        return ProcessedSubmission(
+            id=submission_id,
+            news_title=get_safe_value(title_index),
+            news_description=get_safe_value(desc_index),
+            city=get_safe_value(city_index),
+            category=get_safe_value(category_index),
+            publisher_name=get_safe_value(name_index),
+            publisher_phone=get_safe_value(phone_index),
+            image_path=None,  # No image from form
+            status="pending",
+            timestamp=timestamp
+        )
 
 def main():
     """Main entry point for the form sync service"""

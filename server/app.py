@@ -226,6 +226,128 @@ async def get_sync_status():
         raise HTTPException(status_code=500, detail=f"Error getting sync status: {str(e)}")
 
 
+# Add this endpoint after the existing sync endpoints
+
+@app.get("/debug/form-sync")
+async def debug_form_sync():
+    """Debug endpoint to test form sync"""
+    try:
+        # Manually sync forms
+        count = form_sync_service.sync()
+        
+        # Get the latest submissions
+        news_items = db_service.get_submissions({}, limit=10, offset=0)
+        
+        return {
+            "success": True,
+            "items_processed": count,
+            "last_sync_row": form_sync_service.last_sync_row,
+            "latest_items": news_items
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# Add this to your debug endpoints
+
+@app.get("/debug/google-sheets")
+async def debug_google_sheets():
+    """Debug endpoint to check Google Sheets service status"""
+    try:
+        # Get Google Sheets info
+        credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
+        credentials_exist = os.path.exists(credentials_path)
+        
+        # Check if service is initialized
+        service_initialized = hasattr(sheets_service, 'service') and sheets_service.service is not None
+        
+        # Try a simple operation if service is initialized
+        test_result = None
+        error_message = None
+        
+        if service_initialized:
+            try:
+                # Just get metadata for the spreadsheet
+                spreadsheet_id = settings.GOOGLE_SHEET_ID or settings.FORM_RESPONSES_SHEET_ID
+                if spreadsheet_id:
+                    result = sheets_service.service.spreadsheets().get(
+                        spreadsheetId=spreadsheet_id
+                    ).execute()
+                    test_result = {
+                        "title": result.get('properties', {}).get('title'),
+                        "sheets": len(result.get('sheets', [])),
+                        "spreadsheetId": result.get('spreadsheetId')
+                    }
+            except Exception as e:
+                error_message = str(e)
+        
+        return {
+            "service_initialized": service_initialized,
+            "credentials_path": credentials_path,
+            "credentials_exist": credentials_exist,
+            "spreadsheet_id_setting": settings.GOOGLE_SHEET_ID,
+            "form_responses_sheet_id": settings.FORM_RESPONSES_SHEET_ID,
+            "test_result": test_result,
+            "error_message": error_message
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+# Add this to your debug endpoints
+
+@app.get("/debug/database")
+async def debug_database():
+    """Debug endpoint to check database connectivity and content"""
+    try:
+        # Create a test submission
+        test_id = f"test-{uuid.uuid4()}"
+        test_submission = ProcessedSubmission(
+            id=test_id,
+            news_title="Test Title",
+            news_description="This is a test submission to verify database connectivity",
+            city="Test City",
+            category="Test",
+            publisher_name="Tester",
+            publisher_phone="123-456-7890",
+            image_path=None,
+            status="test",
+            timestamp=datetime.datetime.now()
+        )
+        
+        # Try to save it
+        db_service.save_submission(test_submission)
+        
+        # Try to retrieve it
+        saved_submission = db_service.get_submission_by_id(test_id)
+        
+        # Get all submissions
+        all_submissions = db_service.get_submissions({}, 100, 0)
+        
+        return {
+            "status": "success",
+            "database_url": settings.DATABASE_URL.replace(settings.DATABASE_PASSWORD, "********") if hasattr(settings, "DATABASE_PASSWORD") else settings.DATABASE_URL,
+            "database_path": getattr(settings, "DATABASE_PATH", "Not set"),
+            "test_submission_saved": saved_submission is not None,
+            "total_submissions": len(all_submissions),
+            "latest_submissions": all_submissions[:5] if all_submissions else []
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "database_url": settings.DATABASE_URL.replace(settings.DATABASE_PASSWORD, "********") if hasattr(settings, "DATABASE_PASSWORD") else settings.DATABASE_URL,
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
