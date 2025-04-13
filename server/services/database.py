@@ -46,124 +46,104 @@ class SubmissionRecord(Base):
             status=self.status
         )
 
+import logging
+from typing import Optional, List, Dict, Any
+import datetime
+
+from database import get_session
+from models.news import ProcessedSubmission
+
+logger = logging.getLogger(__name__)
 
 class DatabaseService:
     """Service for database operations"""
     
-    def __init__(self):
-        """Initialize the database service with connection from settings"""
+    def add_submission(self, submission: ProcessedSubmission) -> bool:
+        """
+        Add a new submission to the database
+        
+        Args:
+            submission: The submission to add
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        session = get_session()
         try:
-            # Get database URL from settings
-            database_url = settings.DATABASE_URL
-            logger.info(f"Connecting to database: {database_url.replace(settings.DATABASE_PASSWORD, '********')}")
-            
-            # Create engine
-            self.engine = create_engine(database_url)
-            
-            # Create session factory
-            self.Session = sessionmaker(bind=self.engine)
-            
-            # Create tables if they don't exist
-            Base.metadata.create_all(self.engine)
-            logger.info("Database connection established and tables created")
-            
+            # Check if submission already exists
+            existing = self.get_submission_by_id(submission.id)
+            if existing:
+                logger.info(f"Submission {submission.id} already exists in database")
+                return False
+                
+            session.add(submission)
+            session.commit()
+            logger.info(f"Added new submission to database: {submission.id}")
+            return True
         except Exception as e:
-            logger.error(f"Database connection error: {str(e)}")
-            raise
-    
-    def get_session(self):
-        """Get a new session"""
-        return self.Session()
-    
-    def get_all_submissions(self) -> List[ProcessedSubmission]:
-        """Get all submissions from database"""
-        try:
-            with self.get_session() as session:
-                records = session.query(SubmissionRecord).all()
-                return [record.to_model() for record in records]
-        except Exception as e:
-            logger.error(f"Error getting all submissions: {str(e)}")
-            raise
+            session.rollback()
+            logger.error(f"Failed to add submission: {e}")
+            return False
+        finally:
+            session.close()
     
     def get_submission_by_id(self, submission_id: str) -> Optional[ProcessedSubmission]:
-        """Get a specific submission by ID"""
-        try:
-            with self.get_session() as session:
-                record = session.query(SubmissionRecord).filter(
-                    SubmissionRecord.id == submission_id
-                ).first()
-                
-                if record:
-                    return record.to_model()
-                return None
-        except Exception as e:
-            logger.error(f"Error getting submission by ID: {str(e)}")
-            raise
-    
-    def add_submission(self, submission: ProcessedSubmission):
-        """Add a new submission to the database"""
-        try:
-            with self.get_session() as session:
-                record = SubmissionRecord(
-                    id=submission.id,
-                    timestamp=submission.timestamp,
-                    news_title=submission.news_title,
-                    news_description=submission.news_description,
-                    city=submission.city,
-                    category=submission.category,
-                    publisher_name=submission.publisher_name,
-                    publisher_phone=submission.publisher_phone,
-                    image_path=submission.image_path,
-                    status=submission.status
-                )
-                
-                session.add(record)
-                session.commit()
-                logger.info(f"Saved submission: {record.id}")
-        except Exception as e:
-            logger.error(f"Error adding submission: {str(e)}")
-            raise
-    
-    def save_submission(self, submission: ProcessedSubmission):
         """
-        Save a submission to the database (compatibility method that calls add_submission)
-        Note: This method is maintained for backward compatibility with existing code
+        Get a submission by ID
+        
+        Args:
+            submission_id: The submission ID to look for
+            
+        Returns:
+            The submission if found, None otherwise
         """
+        session = get_session()
         try:
-            logger.info(f"Saving submission to database: {submission.id}")
-            # Simply call add_submission method that has the actual implementation
-            self.add_submission(submission)
+            return session.query(ProcessedSubmission).filter(
+                ProcessedSubmission.id == submission_id
+            ).first()
         except Exception as e:
-            logger.error(f"Error in save_submission: {str(e)}")
-            raise
+            logger.error(f"Error querying submission {submission_id}: {e}")
+            return None
+        finally:
+            session.close()
     
-    def update_submission_status(
-        self, submission_id: str, status: str, duplicate_of: str = None
-    ) -> bool:
-        """Update the status of a submission"""
+    def save_submission(self, submission: ProcessedSubmission) -> bool:
+        """
+        Save a submission (wrapper around add_submission for compatibility)
+        
+        Args:
+            submission: The submission to save
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.add_submission(submission)
+    
+    def get_submissions_by_ids(self, submission_ids: List[str]) -> List[ProcessedSubmission]:
+        """
+        Get multiple submissions by their IDs
+        
+        Args:
+            submission_ids: List of submission IDs
+            
+        Returns:
+            List of found submissions
+        """
+        session = get_session()
         try:
-            with self.get_session() as session:
-                record = session.query(SubmissionRecord).filter(
-                    SubmissionRecord.id == submission_id
-                ).first()
-                
-                if not record:
-                    return False
-                    
-                record.status = status
-                if duplicate_of:
-                    record.duplicate_of = duplicate_of
-                    
-                session.commit()
-                logger.info(f"Updated submission status: {record.id}")
-                return True
+            return session.query(ProcessedSubmission).filter(
+                ProcessedSubmission.id.in_(submission_ids)
+            ).all()
         except Exception as e:
-            logger.error(f"Error updating submission status: {str(e)}")
-            raise
-
+            logger.error(f"Error querying submissions by IDs: {e}")
+            return []
+        finally:
+            session.close()
+            
     def get_submissions(self, filters: Dict[str, Any] = None, limit: int = 10, offset: int = 0) -> List[Dict]:
         """
-        Get news submissions with optional filters and pagination
+        Get submissions with optional filters and pagination
         
         Args:
             filters: Dictionary of filter conditions
@@ -171,78 +151,76 @@ class DatabaseService:
             offset: Number of records to skip
             
         Returns:
-            List of news submissions as dictionaries
+            List of submissions formatted as API response dicts
         """
+        session = get_session()
         try:
-            with self.get_session() as session:
-                query = session.query(SubmissionRecord)
-                
-                # Apply filters if provided
-                if filters and len(filters) > 0:
-                    for key, value in filters.items():
-                        if value is not None and hasattr(SubmissionRecord, key):
-                            query = query.filter(getattr(SubmissionRecord, key) == value)
-                
-                # Add ordering and pagination
-                query = query.order_by(SubmissionRecord.timestamp.desc()).limit(limit).offset(offset)
-                
-                records = query.all()
-                # Convert records to dictionaries
-                result = []
-                for record in records:
-                    submission = record.to_model()
-                    # Convert to dict and map field names to match expected API format
-                    submission_dict = {
-                        "id": submission.id,
-                        "title": submission.news_title,
-                        "description": submission.news_description,
-                        "city": submission.city,
-                        "category": submission.category,
-                        "reporter_name": submission.publisher_name,
-                        "contact_number": submission.publisher_phone,
-                        "image_url": submission.image_path,
-                        "status": submission.status,
-                        "created_at": submission.timestamp
-                    }
-                    result.append(submission_dict)
-                return result
+            query = session.query(ProcessedSubmission)
+            
+            # Apply filters if provided
+            if filters and len(filters) > 0:
+                for key, value in filters.items():
+                    if value is not None and hasattr(ProcessedSubmission, key):
+                        query = query.filter(getattr(ProcessedSubmission, key) == value)
+            
+            # Add ordering and pagination
+            query = query.order_by(ProcessedSubmission.timestamp.desc()).limit(limit).offset(offset)
+            
+            submissions = query.all()
+            
+            # Convert to API response format
+            result = []
+            for sub in submissions:
+                result.append({
+                    "id": sub.id,
+                    "title": sub.news_title,
+                    "description": sub.news_description,
+                    "city": sub.city,
+                    "category": sub.category,
+                    "reporter_name": sub.publisher_name,
+                    "contact_number": sub.publisher_phone,
+                    "image_url": sub.image_path,
+                    "status": sub.status,
+                    "created_at": sub.timestamp
+                })
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"Error getting submissions: {str(e)}")
-            raise
-
-    def get_submission_by_id(self, news_id: str) -> Optional[Dict]:
+            logger.error(f"Error getting submissions: {e}")
+            return []
+        finally:
+            session.close()
+    
+    def update_submission_status(self, submission_id: str, status: str, duplicate_of: str = None) -> bool:
         """
-        Get a specific news submission by ID
+        Update the status of a submission
         
         Args:
-            news_id: The ID of the news submission
+            submission_id: ID of the submission to update
+            status: New status value
+            duplicate_of: Optional ID of the submission this is a duplicate of
             
         Returns:
-            News submission as dictionary or None if not found
+            True if successful, False otherwise
         """
+        session = get_session()
         try:
-            with self.get_session() as session:
-                record = session.query(SubmissionRecord).filter(
-                    SubmissionRecord.id == news_id
-                ).first()
-                
-                if not record:
-                    return None
-                
-                submission = record.to_model()
-                # Convert to dict and map field names to match expected API format
-                return {
-                    "id": submission.id,
-                    "title": submission.news_title,
-                    "description": submission.news_description,
-                    "city": submission.city,
-                    "category": submission.category,
-                    "reporter_name": submission.publisher_name,
-                    "contact_number": submission.publisher_phone,
-                    "image_url": submission.image_path,
-                    "status": submission.status,
-                    "created_at": submission.timestamp
-                }
+            submission = session.query(ProcessedSubmission).filter(
+                ProcessedSubmission.id == submission_id
+            ).first()
+            
+            if not submission:
+                return False
+            
+            submission.status = status
+            session.commit()
+            logger.info(f"Updated status of submission {submission_id} to {status}")
+            return True
+            
         except Exception as e:
-            logger.error(f"Error getting submission by ID: {str(e)}")
-            raise
+            session.rollback()
+            logger.error(f"Error updating submission status: {e}")
+            return False
+        finally:
+            session.close()

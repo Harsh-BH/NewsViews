@@ -1,12 +1,13 @@
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from config import settings
 from models.news import ProcessedSubmission
+from database import get_session
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -86,7 +87,7 @@ class GoogleSheetsService:
             
             # Append to sheet
             result = self.service.spreadsheets().values().append(
-                spreadsheetId=settings.GOOGLE_SHEET_ID,
+                spreadsheetId=settings.FORM_RESPONSES_SHEET_ID,
                 range=f"{settings.GOOGLE_SHEET_RANGE}!A:J",
                 valueInputOption='RAW',
                 insertDataOption='INSERT_ROWS',
@@ -138,3 +139,101 @@ class GoogleSheetsService:
         except Exception as e:
             logger.error(f"Error getting data from Google Sheet: {e}")
             return None
+
+    def sync_sheet_to_database(self, spreadsheet_id: str = None, range_name: str = None) -> Dict[str, int]:
+        """
+        Sync data from Google Sheet to database, avoiding duplicate entries
+        
+        Args:
+            spreadsheet_id: ID of the Google Sheet (defaults to settings.FORM_RESPONSES_SHEET_ID)
+            range_name: Range to retrieve (defaults to settings.GOOGLE_SHEET_RANGE)
+            
+        Returns:
+            Dict with counts of added, skipped, and error entries
+        """
+        if not self._ensure_service():
+            return {"added": 0, "skipped": 0, "errors": 0}
+            
+        # Use default values from settings if not provided
+        spreadsheet_id = spreadsheet_id or settings.FORM_RESPONSES_SHEET_ID
+        range_name = range_name or f"{settings.GOOGLE_SHEET_RANGE}!A:J"
+        
+        try:
+            # Get data from sheet
+            result = self.get_sheet_data(spreadsheet_id, range_name)
+            if not result:
+                logger.error("Failed to retrieve sheet data")
+                return {"added": 0, "skipped": 0, "errors": 0}
+                
+            rows = result.get('values', [])
+            if not rows:
+                logger.info("No data found in sheet")
+                return {"added": 0, "skipped": 0, "errors": 0}
+                
+            # Skip header row if present (assuming first row is header)
+            if rows[0][0].lower() == "id" or not rows[0][0].strip().isalnum():
+                data_rows = rows[1:]
+            else:
+                data_rows = rows
+                
+            stats = {"added": 0, "skipped": 0, "errors": 0}
+            
+            # Get database session
+            db_session = get_session()
+            
+            # Process each row
+            for row in data_rows:
+                try:
+                    # Skip rows with insufficient data
+                    if len(row) < 9:
+                        stats["errors"] += 1
+                        logger.warning(f"Skipping row with insufficient data: {row}")
+                        continue
+                        
+                    submission_id = row[0].strip()
+                    
+                    # Check if submission already exists in database
+                    existing_submission = db_session.query(ProcessedSubmission).filter(
+                        ProcessedSubmission.id == submission_id
+                    ).first()
+                    
+                    if existing_submission:
+                        logger.info(f"Submission {submission_id} already exists, skipping")
+                        stats["skipped"] += 1
+                        continue
+                        
+                    # Create new submission object
+                    new_submission = ProcessedSubmission(
+                        id=submission_id,
+                        news_title=row[1],
+                        news_description=row[2],
+                        city=row[3],
+                        category=row[4],
+                        publisher_name=row[5],
+                        publisher_phone=row[6],
+                        image_path=row[7] if len(row) > 7 and row[7].strip() else None,
+                        status=row[8] if len(row) > 8 and row[8].strip() else "pending",
+                        timestamp=row[9] if len(row) > 9 and row[9].strip() else None
+                    )
+                    
+                    # Add to database
+                    db_session.add(new_submission)
+                    db_session.commit()
+                    stats["added"] += 1
+                    logger.info(f"Added new submission from sheet: {submission_id}")
+                    
+                except Exception as e:
+                    db_session.rollback()
+                    stats["errors"] += 1
+                    logger.error(f"Error processing row: {e}")
+                    
+            logger.info(f"Sheet sync complete. Added: {stats['added']}, "
+                       f"Skipped: {stats['skipped']}, Errors: {stats['errors']}")
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error syncing sheet to database: {e}")
+            return {"added": 0, "skipped": 0, "errors": 0}
+        finally:
+            if 'db_session' in locals():
+                db_session.close()

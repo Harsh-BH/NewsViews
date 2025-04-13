@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     
     # OpenAI settings
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GOOGLE_SHEET_RANGE: str = os.getenv("GOOGLE_SHEET_RANGE", "Form Responses 1")  # Default sheet name to use
+    
     
     # Additional settings from .env that might be used
     SPREADSHEET_ID: str = os.getenv("SPREADSHEET_ID", "")
@@ -131,6 +133,9 @@ UPLOAD_DIR = settings.UPLOAD_DIR
 FORM_RESPONSES_SHEET_ID = settings.FORM_RESPONSES_SHEET_ID
 GOOGLE_APPLICATION_CREDENTIALS = settings.GOOGLE_APPLICATION_CREDENTIALS
 OPENAI_API_KEY = settings.OPENAI_API_KEY
+# Add this line to expose GOOGLE_SHEET_RANGE at module level
+GOOGLE_SHEET_RANGE = settings.GOOGLE_SHEET_RANGE
+
 
 GOOGLE_CREDENTIALS_FILE = settings.GOOGLE_CREDENTIALS_FILE
 SPREADSHEET_ID = settings.SPREADSHEET_ID

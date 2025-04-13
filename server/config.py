@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     FORM_SYNC_INTERVAL_MINUTES: int = 5
     GOOGLE_CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "")
    
-    GOOGLE_SHEET_ID: str = os.getenv("GOOGLE_SHEET_ID", "your_spreadsheet_id_here")
-    GOOGLE_SHEET_RANGE: str = "Form Responses 1"
+    GOOGLE_SHEET_ID: str = os.getenv("FORM_RESPONSES_SHEET_ID", "your_spreadsheet_id_here")
+    GOOGLE_SHEET_RANGE: str = os.getenv("GOOGLE_SHEET_RANGE", "Form Responses 1!A2:E")  # Default sheet name to use
     
     # Upload settings
     MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "5"))
