@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { BookmarkIcon, Share2Icon, Eye } from 'lucide-react';
-import { maskPhoneNumber, getFirstName } from '../../utils/stringUtils';
+import { getFirstName } from '../../utils/stringUtils';
 import { isBookmarked, toggleBookmark } from '../../utils/bookmarkUtils';
 import { NewsItem } from '../../types/news';
 import { Button } from '../ui/button';
@@ -10,6 +10,8 @@ import { Card, CardContent, CardFooter } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { motion } from 'framer-motion';
+import Image from 'next/image';
+import { getDirectImageUrl } from '../../utils/imageUtils';
 
 interface NewsCardProps {
   news: NewsItem;
@@ -20,6 +22,8 @@ interface NewsCardProps {
 export default function NewsCard({ news, index, viewCount = 100 }: NewsCardProps) {
   const [bookmarked, setBookmarked] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const defaultImage = 'https://images.unsplash.com/photo-1557992260-ec58e38d363c?w=800&q=80';
   
   useEffect(() => {
     setBookmarked(isBookmarked(news.id));
@@ -31,13 +35,16 @@ export default function NewsCard({ news, index, viewCount = 100 }: NewsCardProps
     setBookmarked(newStatus);
   };
   
-  const reporterFirstName = getFirstName(news.reporter_name);
-  const maskedPhone = maskPhoneNumber(news.contact_number);
+  const publisherName = getFirstName(news.publisher_name);
   
   if (!mounted) {
     return <Card className="h-[300px] animate-pulse bg-gray-100"></Card>;
   }
   
+  const imageUrl = !imageError ? 
+    getDirectImageUrl(news.image_url) : 
+    defaultImage;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -48,11 +55,14 @@ export default function NewsCard({ news, index, viewCount = 100 }: NewsCardProps
       <Card className="overflow-hidden h-full flex flex-col border-gray-100 hover:border-blue-100 transition-all">
         {news.image_url && (
           <div className="relative h-48 w-full overflow-hidden bg-gray-50">
-            <img 
-              src={news.image_url}
+            <Image 
+              src={imageUrl}
               alt={news.title}
+              width={600}
+              height={400}
               className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-105"
               loading="lazy"
+              onError={() => setImageError(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-gray-900/40 to-transparent" />
             
@@ -99,9 +109,9 @@ export default function NewsCard({ news, index, viewCount = 100 }: NewsCardProps
           <div className="flex justify-between items-center w-full">
             <div className="flex items-center gap-2">
               <Avatar className="h-6 w-6 bg-blue-100">
-                <AvatarFallback className="text-blue-700 text-xs">{reporterFirstName.charAt(0)}</AvatarFallback>
+                <AvatarFallback className="text-blue-700 text-xs">{publisherName.charAt(0)}</AvatarFallback>
               </Avatar>
-              <span>{reporterFirstName}</span>
+              <span>{publisherName}</span>
             </div>
             
             <div className="flex items-center gap-3">

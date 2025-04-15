@@ -1,20 +1,26 @@
 export interface NewsItem {
-  id: string;
+  id?: string;  // Make ID optional since we may generate it
   title: string;
-  description: string;
+  description: string;  // maps to description in API
+  publisher_name: string; // From API directly
+  publisher_phone?: string; // From API directly
   city: string;
   category: string;
-  reporter_name: string;
-  contact_number: string;
   image_url: string | null;
-  status: string;
-  created_at: string;
+  status?: 'pending' | 'approved' | 'rejected';
+  submission_date?: string;
+  timestamp?: string; // Some items use timestamp instead of submission_date
 }
 
 export interface NewsFilters {
   status?: string;
-  category?: string;
   city?: string;
-  limit?: number;
-  offset?: number;
+  category?: string;
+}
+
+export interface PaginationInfo {
+  total: number;
+  page: number;
+  pages: number;
+  limit: number;
 }

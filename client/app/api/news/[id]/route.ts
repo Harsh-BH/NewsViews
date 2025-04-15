@@ -5,10 +5,10 @@ const API_BASE_URL = process.env.BACKEND_API_URL || 'http://localhost:8000';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
+    const { id } = context.params;
     
     try {
       const response = await axios.get(`${API_BASE_URL}/news/${id}`);

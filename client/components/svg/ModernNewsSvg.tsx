@@ -17,7 +17,6 @@ export function ModernNewsSvg({ className }: { className?: string }) {
 
   // Define theme-aware colors
   const textColor = isDark ? "currentColor" : "#333"
-  const mutedTextColor = isDark ? "currentColor" : "#555"
   const borderColor = isDark ? "currentColor" : "#ddd"
   
   // Animation variants for smoother motion
@@ -61,6 +60,13 @@ export function ModernNewsSvg({ className }: { className?: string }) {
       }
     })
   };
+
+  const headlines = [
+    "Breaking News",
+    "Local Updates",
+    "Global Stories",
+    "Tech News"
+  ];
 
   // Initialize state with safe default values
   const [currentHeadline, setCurrentHeadline] = useState(0);
@@ -121,14 +127,9 @@ export function ModernNewsSvg({ className }: { className?: string }) {
       clearTimeout(likeTimer);
       clearInterval(likeInterval);
     };
-  }, [mounted, videoPlayControls, likeControls]);
+  }, [mounted, videoPlayControls, likeControls, headlines.length]);
 
-  const headlines = [
-    "Breaking News",
-    "Local Updates",
-    "Global Stories",
-    "Tech News"
-  ];
+
 
   // If not mounted yet, render a placeholder version with minimal animations
   if (!mounted) {

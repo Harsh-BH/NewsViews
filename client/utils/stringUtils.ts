@@ -13,9 +13,16 @@ export function maskPhoneNumber(phoneNumber: string): string {
 }
 
 /**
- * Extracts first name from a full name
+ * Extracts the first name from a full name string
+ * @param name The full name to process
+ * @returns The first name
  */
-export function getFirstName(fullName: string): string {
-  if (!fullName) return '';
-  return fullName.split(' ')[0];
+export function getFirstName(name?: string): string {
+  if (!name) return 'User';
+  
+  const trimmedName = name.trim();
+  if (trimmedName.length === 0) return 'User';
+  
+  // Get first part of name before any space
+  return trimmedName.split(' ')[0];
 }

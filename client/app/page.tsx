@@ -1,13 +1,14 @@
 "use client"
 
-// Import the enhanced data visualization component
-import { EnhancedDataVisual } from "@/components/svg/EnhancedDataVisual"
+// Remove unused import
+// import { EnhancedDataVisual } from "@/components/svg/EnhancedDataVisual"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ModeToggle } from "@/components/mode-toggle"
 import { motion, useScroll, useTransform } from "framer-motion"
-import { ArrowRight, BookmarkIcon, Filter, Globe, MessageSquare, Shield, Star } from "lucide-react"
+import { ArrowRight, Globe, MessageSquare, Shield } from "lucide-react"
+// Remove unused imports: BookmarkIcon, Filter, Star
 import dynamic from 'next/dynamic'
 import Link from "next/link"
 import { useRef } from "react"
@@ -18,12 +19,10 @@ import {
   NewsSvg, 
   NetworkSvg, 
   BubblesSvg,
-  DataVisualSvg,
   NewsIconsSvg
 } from "@/components/svg/AnimatedSvgCollection"
 
 import { FilterIcon, BookmarkIcon as AnimatedBookmark, ModerationIcon } from "@/components/svg/AnimatedIcons"
-import { CircuitPattern } from "@/components/svg/CircuitPattern"
 
 // Dynamically import the AnimatedStars component
 const AnimatedStars = dynamic(() => import('@/components/AnimatedStars'), { 
@@ -51,8 +50,6 @@ export default function Home() {
   const messageX = useTransform(scrollYProgress, [0.1, 0.3], [50, -20])
   
   // New parallax effects without ease options
-  const dataVisualY = useTransform(scrollYProgress, [0.3, 0.5], [30, -30])
-  const dataVisualRotate = useTransform(scrollYProgress, [0.3, 0.5], [2, -2])
   const heroElementsY = useTransform(scrollYProgress, [0, 0.3], [0, -50])
   const featureCardsX = useTransform(scrollYProgress, [0.4, 0.6], [-10, 10])
   const featureCardsStagger = [

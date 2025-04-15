@@ -254,7 +254,7 @@ export function BubblesSvg({ className }: { className?: string }) {
   // Rest of the component with animations for client-side
   const bubbleVariants = {
     hidden: { opacity: 0, y: 0 },
-    visible: (custom: any) => ({
+    visible: (custom: { duration: number; delay: number }) => ({
       opacity: isDark ? [0.3, 0.6, 0.3] : [0.5, 0.8, 0.5],
       y: [-5, 5, -5],
       scale: [1, 1.05, 1],
