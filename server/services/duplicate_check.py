@@ -1,60 +1,55 @@
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-from models.news import NewsSubmission, ProcessedSubmission
-from typing import List, Tuple, Optional
+from models import NewsSubmission, DuplicateCheckResult
+import config
+from utils.logger import setup_logger
 
-class DuplicateCheckService:
+# Set up logger
+logger = setup_logger("services.duplicate_check")
+
+class DuplicateChecker:
     def __init__(self):
         self.vectorizer = TfidfVectorizer(stop_words='english')
-    
-    def check_for_duplicate(
-        self, 
-        new_submission: NewsSubmission, 
-        existing_submissions: List[ProcessedSubmission],
-        threshold: float = 0.8
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Check if a submission is too similar to existing submissions.
-        Returns (is_duplicate, duplicate_id)
-        """
+        
+    def check_duplicate(self, new_submission: NewsSubmission, existing_submissions: list) -> DuplicateCheckResult:
+        """Check if a new submission is a duplicate of any existing submission"""
         if not existing_submissions:
-            return False, None
-            
-        # Combine title and description for better comparison
-        new_text = f"{new_submission.news_title} {new_submission.news_description}"
+            logger.info("No existing submissions to compare against. Skipping duplicate check.")
+            return DuplicateCheckResult(is_duplicate=False)
         
-        # Extract text from existing submissions
-        existing_texts = []
-        for submission in existing_submissions:
-            text = f"{submission.news_title} {submission.news_description}"
-            existing_texts.append(text)
+        # Extract existing descriptions
+        existing_texts = [sub["description"] for sub in existing_submissions]
         
-        # If there are no existing texts, return False
-        if not existing_texts:
-            return False, None
-            
-        # Create TF-IDF matrix
-        try:
-            all_texts = existing_texts + [new_text]
-            tfidf_matrix = self.vectorizer.fit_transform(all_texts)
-            
-            # Calculate cosine similarity between the new submission and all existing ones
-            similarity_scores = cosine_similarity(
-                tfidf_matrix[-1:],  # New submission (last row)
-                tfidf_matrix[:-1]   # All existing submissions
-            )[0]
-            
-            # Find the highest similarity score and check if it exceeds threshold
-            max_similarity = np.max(similarity_scores)
-            if max_similarity >= threshold:
-                most_similar_idx = np.argmax(similarity_scores)
-                duplicate_id = existing_submissions[most_similar_idx].id
-                return True, duplicate_id
-                
-            return False, None
-            
-        except Exception as e:
-            print(f"Error during duplicate check: {str(e)}")
-            # In case of an error, allow the submission to proceed
-            return False, None
+        # Add new submission text
+        all_texts = existing_texts + [new_submission.description]
+        
+        logger.info(f"Checking for duplicates among {len(existing_texts)} existing submissions")
+        
+        # Generate TF-IDF matrix
+        tfidf_matrix = self.vectorizer.fit_transform(all_texts)
+        
+        # Get the vector for the new submission (last row)
+        new_submission_vector = tfidf_matrix[-1]
+        
+        # Compare with all existing submissions
+        similarity_scores = cosine_similarity(
+            new_submission_vector,
+            tfidf_matrix[:-1]  # Exclude the last row (new submission)
+        )[0]
+        
+        # Find the highest similarity score and its index
+        max_similarity = max(similarity_scores) if len(similarity_scores) > 0 else 0.0
+        most_similar_index = np.argmax(similarity_scores) if len(similarity_scores) > 0 else -1
+        
+        # Check if it exceeds the threshold
+        if max_similarity >= config.DUPLICATE_THRESHOLD:
+            logger.warning(f"Potential duplicate detected! Similarity score: {max_similarity:.4f}, matching entry ID: {most_similar_index}")
+            return DuplicateCheckResult(
+                is_duplicate=True,
+                similarity_score=float(max_similarity),
+                duplicate_entry_id=str(most_similar_index)  # Ensure this is a string
+            )
+        else:
+            logger.info(f"No duplicates detected. Highest similarity score: {max_similarity:.4f}")
+            return DuplicateCheckResult(is_duplicate=False)

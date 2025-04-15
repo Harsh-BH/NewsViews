@@ -1,19 +1,35 @@
-fastapi==0.104.1
-uvicorn==0.23.2
-python-dotenv==1.0.0
-google-auth==2.23.3
-gspread==5.12.0
-python-multipart==0.0.6
-scikit-learn==1.3.2
-sqlalchemy==2.0.22
-psycopg2-binary==2.9.9  
-pydantic==2.4.2
-pydantic-settings==2.0.3
-flask==2.3.3
-flask-cors==4.0.0
-google-api-python-client==2.97.0
-google-auth-httplib2==0.1.0
-google-auth-oauthlib==1.0.0
-gunicorn==21.2.0
+# Framework
+fastapi==0.110.0
+uvicorn==0.27.1
+pydantic==2.6.1
+pydantic-settings>=2.0.3
+python-dotenv==1.0.1
 
-sqlalchemy
+# Database
+sqlalchemy>=2.0.22
+psycopg2-binary>=2.9.9  # For PostgreSQL
+alembic>=1.12.0  # For database migrations
+
+# Google Sheets Integration
+google-auth==2.27.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.116.0
+
+# AI APIs
+groq>=0.4.0  # For Groq LLM API
+
+# Utils
+requests>=2.31.0
+pandas>=2.1.1
+python-multipart==0.0.9
+cachetools>=5.3.0  # For caching functionality
+httpx==0.27.0
+scikit-learn==1.4.0
+numpy==1.26.3
+pillow==10.2.0
+
+# Image type detection (alternatives to imghdr)
+python-magic>=0.4.27
+# For systems without libmagic installed, use python-magic-bin
+python-magic-bin>=0.4.14; sys_platform == 'win32'
