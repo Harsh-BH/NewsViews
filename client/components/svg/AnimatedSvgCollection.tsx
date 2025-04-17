@@ -163,7 +163,7 @@ export function NetworkSvg({ className, delay = 0 }: { className?: string; delay
         times: [0, 0.4, 1],
         ease: "easeOut",
         repeat: Infinity, 
-        repeatType: "reverse"
+        repeatType: "reverse" as const
       }
     })
   };

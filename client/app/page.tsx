@@ -158,7 +158,6 @@ export default function Home() {
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   backgroundClip: "text",
-                  textFillColor: "transparent",
                 }}
               >
                 NewsViews

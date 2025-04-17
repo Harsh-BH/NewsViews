@@ -26,11 +26,12 @@ export default function NewsCard({ news, index, viewCount = 100 }: NewsCardProps
   const defaultImage = 'https://images.unsplash.com/photo-1557992260-ec58e38d363c?w=800&q=80';
   
   useEffect(() => {
-    setBookmarked(isBookmarked(news.id));
+    setBookmarked(news.id ? isBookmarked(news.id) : false);
     setMounted(true);
   }, [news.id]);
   
   const handleBookmarkToggle = () => {
+    if (!news.id) return;
     const newStatus = toggleBookmark(news.id);
     setBookmarked(newStatus);
   };

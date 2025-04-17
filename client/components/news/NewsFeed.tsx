@@ -125,6 +125,10 @@ export default function NewsFeed() {
             // Convert Google Drive links to direct download links
             imageUrl = getDirectImageUrl(imageUrl);
             
+            // Ensure status is one of the valid types in NewsItem
+            const status = item.status === 'pending' || item.status === 'rejected' ? 
+              item.status as 'pending' | 'rejected' : 'approved';
+            
             return {
               id: itemId,
               title: item.title || 'Untitled',
@@ -133,7 +137,7 @@ export default function NewsFeed() {
               city: item.location || item.city || 'Unknown',
               category: item.category || 'General',
               image_url: imageUrl,
-              status: item.status || 'approved',
+              status: status,
               submission_date: item.timestamp || item.submission_date || new Date().toISOString()
             };
           });
@@ -141,8 +145,8 @@ export default function NewsFeed() {
           setNews(processedNews);
           
           // Extract unique cities and categories for filters
-          setCities(Array.from(new Set(processedNews.map(item => item.city))).filter(Boolean));
-          setCategories(Array.from(new Set(processedNews.map(item => item.category))).filter(Boolean));
+          setCities(Array.from(new Set<string>(processedNews.map((item: NewsItem) => item.city))).filter(Boolean as unknown as <T>(x: T | null | undefined | false | '') => x is T));
+          setCategories(Array.from(new Set<string>(processedNews.map((item: NewsItem) => item.category))).filter(Boolean as unknown as <T>(x: T | null | undefined | false | '') => x is T));
           
           setError(null);
           setErrorDetails(null);
@@ -171,17 +175,18 @@ export default function NewsFeed() {
               
             // Map API item to our NewsItem structure - use the exact field names from the API
             return {
-              id: itemId,
+              id: itemId || generateStableId(item as UnknownRecord),
               title: item.title || 'Untitled',
               description: item.description || '',
               publisher_name: item.publisher_name || 'Anonymous',
-              publisher_phone: item.publisher_phone,
+              publisher_phone: item.publisher_phone || '',
               city: item.city || 'Unknown',
               category: item.category || 'General',
-              image_url: imageUrl,
-              status: item.status || 'approved',
-              timestamp: item.timestamp,
-              submission_date: item.submission_date
+              image_url: imageUrl || null,
+              status: (item.status === 'pending' ? 'pending' : 
+                     item.status === 'rejected' ? 'rejected' : 'approved') as 'pending' | 'rejected' | 'approved',
+              timestamp: item.timestamp || new Date().toISOString(),
+              submission_date: item.submission_date || new Date().toISOString()
             };
           });
           
@@ -255,7 +260,8 @@ export default function NewsFeed() {
                     city: item.location || item.city || 'Unknown',
                     category: item.category || 'General',
                     image_url: imageUrl,
-                    status: item.status || 'approved',
+                    status: (item.status === 'pending' ? 'pending' : 
+                      item.status === 'rejected' ? 'rejected' : 'approved') as 'pending' | 'rejected' | 'approved',
                     submission_date: item.timestamp || item.submission_date || new Date().toISOString()
                   };
                 });
@@ -496,7 +502,7 @@ export default function NewsFeed() {
                         key={item.id} 
                         news={item} 
                         index={index}
-                        viewCount={viewCounts.current[item.id] || 100 + index * 50}
+                        viewCount={item.id !== undefined ? viewCounts.current[item.id] || 100 + index * 50 : 100 + index * 50}
                       />
                     ))}
                   </div>
