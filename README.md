@@ -9,12 +9,12 @@ This application aims to create a community-driven news aggregator. Local users 
 ## 🚀 Hosted Demo
 
 [🔗 Click here to view the live demo](#)  
-*(Replace with your actual deployed URL)*
+
 
 ## 📂 GitHub Repository
 
-[🔗 View Source Code on GitHub](#)  
-*(Replace with your actual GitHub repo link)*
+[🔗 View Source Code on GitHub](https://github.com/Harsh-BH/NewsViews)  
+
 
 ---
 
