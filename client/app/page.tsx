@@ -443,7 +443,8 @@ export default function Home() {
             <p className="text-lg text-muted-foreground mb-8">Start browsing local news or contribute by submitting your own stories</p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
-                <Button size="lg" className="relative overflow-hidden group">
+                <Link href="/news" className="relative overflow-hidden group">
+                <Button size="lg" className="relative overflow-hidden group ">
                   <span className="relative z-10">Browse News Feed</span>
                   <motion.div 
                     className="absolute inset-0 bg-primary-foreground mix-blend-soft-light"
@@ -452,6 +453,7 @@ export default function Home() {
                     transition={{ duration: 0.4 }}
                   />
                 </Button>
+                </Link>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
                 <Button size="lg" variant="outline" className="border-primary/20 hover:border-primary">
