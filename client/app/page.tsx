@@ -178,7 +178,9 @@ export default function Home() {
               className="flex flex-col sm:flex-row justify-center md:justify-start gap-4"
             >
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
+                <Link href="/news" className="relative overflow-hidden group">
                 <Button size="lg" className="relative overflow-hidden group">
+
                   <span className="relative z-10">Browse News</span>
                   <ArrowRight className="ml-2 h-4 w-4 relative z-10 transition-transform group-hover:translate-x-1" />
                   <motion.span 
@@ -188,6 +190,7 @@ export default function Home() {
                     transition={{ duration: 0.3 }}
                   />
                 </Button>
+                </Link>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
                 <Button size="lg" variant="outline" className="border-primary/20 hover:border-primary">
